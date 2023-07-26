@@ -1,0 +1,123 @@
+---
+title: 'Time Series Project: Summer 2023'
+author: "Reuven (Robert) Derner"
+date: "2023-07-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r libraries}
+library(tswge)
+library(ggplot2)
+library(nnfor)
+library(dplyr)
+```
+
+Load in the data from github
+
+```{r Brief Overview of Data}
+
+df = read.csv("https://raw.githubusercontent.com/ReuvenDerner/TimeSeriesProject2023/main/TimeSeriesProject2018_2020.csv")
+
+# take a sample of 15 from the dataframe
+real_estate_sample = sample_n(df, 5)
+knitr::kable(real_estate_sample, "html")
+
+```
+
+
+There shouldn't be any nulls after a preprocessing of imputating the data 
+
+```{r Check for Nulls}
+#reassign the dataframe 
+df = TimeSeriesProject2018_2020
+
+# Address the missing values in each column (NA as well as empty strings).
+missing_df = as.data.frame(sapply(df, function(x) sum(is.na(x))))
+colnames(missing_df) = c("variable missing")
+knitr::kable(missing_df, "html")
+empty_string_df = as.data.frame(sapply(df, function(x) sum(x == "")))
+colnames(empty_string_df) = c("variable empty")
+knitr::kable(empty_string_df, "html")
+```
+
+
+#### Generate summary statistics
+```{r}
+# Generate summary statistics
+summary(df)
+```
+
+## Check some data based on our response variable "Sale Amount" 
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plotts.sample.wge(df$`Sale Amount`)
+```
+
+## Lets look at each individually 
+
+The ACF pot shows us a lag at lag 0 then dampens down to nothing 
+
+```{r plot frequency}
+acf(df$`Sale Amount`,lag.max = 20)
+```
+
+
+## Parzen 
+
+```{r parzen}
+parzen.wge(df$`Sale Amount`)
+```
+
+```{r dataframe plot}
+
+```
+
+### 
+
+### Now that we have a sense of the data lets see what a base time series model may yield
+
+```{r}
+
+#First put the object into a ts object
+
+ts_realest = ts(df[,3:12], frequency = 7)
+
+# Lets replot the series and examine what happens
+
+plotts.sample.wge(ts_realest)
+
+```
+
+
+### Test fitting an ARMA Model
+
+```{r AIC5}
+aic5.wge(ts_realest)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
