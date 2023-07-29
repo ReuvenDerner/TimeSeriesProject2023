@@ -1,7 +1,7 @@
 ---
 title: 'Time Series Project: Summer 2023'
-author: "Reuven (Robert) Derner"
-date: "2023-07-26"
+author: "Robert (Reuven) Derner"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -9,37 +9,43 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
 ```{r libraries}
 library(tswge)
-library(ggplot2)
+library(vars)
 library(nnfor)
+library(fpp)
+library(forecast)
+library(backtest)
+library(quantmod)
+library(lubridate)
 library(dplyr)
+library(astsa)
+library(GGally)
+library(zoo)
 ```
 
-Load in the data from github
+## Background
 
-```{r Brief Overview of Data}
+Our clint Annaly Capital Management, Inc. is one of the largest mortgage real estate investment trusts. It is organized in Maryland with its principal office in New York City. The company borrows money, primarily via short term repurchase agreements, and reinvests the proceeds in asset-backed securities. CEO: David L. Finkelstein (Mar 2020–) has hired our firm to examine its past historical data and perform several time series forecasts to predict where the stock will open in the future based on current volumes. The data is contains the open, close, high, low price as well as the total volume recorded at every seven day period between the period 2013 - 2018. 
 
-df = read.csv("https://raw.githubusercontent.com/ReuvenDerner/TimeSeriesProject2023/main/TimeSeriesProject2018_2020.csv")
+## Load in the data from github
+
+```{r read in data}
+
+df = read.csv("https://raw.githubusercontent.com/ReuvenDerner/MSDS-6373-Time-Series/master/Unit%205/NLY.csv")
 
 # take a sample of 15 from the dataframe
-real_estate_sample = sample_n(df, 5)
-knitr::kable(real_estate_sample, "html")
+nyse_sample = sample_n(df, 5)
+knitr::kable(nyse_sample, "html")
 
 ```
 
 
-There shouldn't be any nulls after a preprocessing of imputating the data 
+The data has no missing values and no imputation is necessary, we can proceed with our analysis.
 
 ```{r Check for Nulls}
 #reassign the dataframe 
-df = TimeSeriesProject2018_2020
+#df = TimeSeriesProject2018_2020
 
 # Address the missing values in each column (NA as well as empty strings).
 missing_df = as.data.frame(sapply(df, function(x) sum(is.na(x))))
@@ -56,35 +62,52 @@ knitr::kable(empty_string_df, "html")
 # Generate summary statistics
 summary(df)
 ```
+We need to reclassify the data as numeric volumes
 
-## Check some data based on our response variable "Sale Amount" 
 
-You can also embed plots, for example:
+```{r reclassify the data}
+# Convert the Date column with the correct format
+df$Date <- as.Date(df$Date, format = "%m/%d/%y")
+
+# Convert columns to appropriate data types
+df <- df %>%
+  mutate(Date = as.Date(Date),            # Convert Date column to Date type
+         Open = as.numeric(Open),         # Convert Open column to numeric type
+         High = as.numeric(High),         # Convert High column to numeric type
+         Low = as.numeric(Low),           # Convert Low column to numeric type
+         Close = as.numeric(Close),       # Convert Close column to numeric type
+         Adj.Close = as.numeric(Adj.Close),  # Convert Adj Close column to numeric type
+         Volume = as.integer(Volume))     # Convert Volume column to integer type
+```
+
+```{r recheck the summary data}
+summary(df)
+```
+
+NA were introduced by the mutation of the data, we will just remove the record where that occurs
+
+```{r}
+df.adj = na.omit(df)
+```
+
+
+```{r ggpairs}
+ggpairs(df.adj)
+```
+
+The adj.Close & Open Price is significantly correlated to all other variables in the dataset, particular with one another at 0.91 positive correlation. 
+
+
+## Check some data based on our response variable "Open" 
 
 ```{r pressure, echo=FALSE}
-plotts.sample.wge(df$`Sale Amount`)
+plotts.sample.wge(df.adj$Open)
+plot(df.adj$Date, df.adj$Open, type = "l")
+parzen.wge(df.adj$Open)
+acf(df.adj$Open)
 ```
+The ACF plots shows a slowly dampening autocorrelation, along with the spectral density, there may be some frequency with the five peaks in the spectral density, however there is strong evidence of wandering behavior and stationary.
 
-## Lets look at each individually 
-
-The ACF pot shows us a lag at lag 0 then dampens down to nothing 
-
-```{r plot frequency}
-acf(df$`Sale Amount`,lag.max = 20)
-```
-
-
-## Parzen 
-
-```{r parzen}
-parzen.wge(df$`Sale Amount`)
-```
-
-```{r dataframe plot}
-
-```
-
-### 
 
 ### Now that we have a sense of the data lets see what a base time series model may yield
 
@@ -92,24 +115,409 @@ parzen.wge(df$`Sale Amount`)
 
 #First put the object into a ts object
 
-ts_realest = ts(df[,3:12], frequency = 7)
-
-# Lets replot the series and examine what happens
-
-plotts.sample.wge(ts_realest)
+ts_nly_open = ts(df.adj$Open, frequency = 1)
 
 ```
 
 
-### Test fitting an ARMA Model
+##  Fit at least one model from each of the following four categories (provide all plots and tables needed to ID these models: acfs, spectral density, factor tables, etc.):
+
+###	a. ARMA / ARIMA / ARUMA / Signal Plus Noise (univariate analysis)
+
 
 ```{r AIC5}
-aic5.wge(ts_realest)
+aic5.wge(ts_nly_open, p = 0:10, q = 0:10) #picks a 6:6 model, lets difference the data first
+```
+
+```{r differenced data}
+diff_ts = artrans.wge(ts_nly_open, 1) # we get an acf plot at lag 1 as opposed to lag 0, lets difference the differences data
+
+diff_two_ts = artrans.wge(diff_ts,1) # the acf lag has another pronounced at lag 2, however the first differences data may be better suited. We'll proceed with the first differenced data set.
+
+```
+
+
+```{r aic5 second iteration}
+aic5.wge(diff_ts, p = 0:10, q = 0:10, type = "aic") # at iteration 80, AIC picks AR(7)MA(2) model
+aic5.wge(diff_ts, p= 0:10, q=0:10, type ="bic") # at iteration 75, BIC picks AR(0)MA(0) model
+```
+
+
+Noting that the BIC choose a AR0MA0 model, this tells us that we have likely high degrees of wandering even after differences the data, we'll model both, but give the bic a straight seasonal component
+
+```{r estimate the models}
+#AIC Model AR(8)MA(9) model
+aic_est = est.arma.wge(diff_ts, p = 7, q = 2)
+
+#BIC Model  AR(6)MA(8) model
+bic_est = est.arma.wge(diff_ts, p = 0, q = 0)
+
+```
+### Comment here on the factor, the strong behavior is indicating that 
+
+```{r forecast ARMA models}
+
+# AIC Model Forecast
+aic_fore = fore.arima.wge(ts_nly_open, phi = aic_est$phi, theta = aic_est$theta, d=1,n.ahead = 12, lastn = T, limits = T)
+
+# BIC Model FOrecast
+bic_fore = fore.arima.wge(ts_nly_open, phi = bic_est$phi, theta = bic_est$theta, d=1, n.ahead = 12, lastn = T, limits = T)
+
+# Both are more or less the same model given the ARMA component cancel each other out 
+
+```
+Both the long and short term horizon models appear to be hovering around the mean with significant upper and lower bounds to their forecasts predictions
+
+```{r ASE Confience Limits}
+aic_fore$ul
+aic_fore$ll
+```
+
+```{r ASE Score}
+ase_aic_univariate = mean((ts_nly_open[251:262] - aic_fore$f)^2)
+
+ase_aic_univariate # 0.3818423
+```
+
+```{r Confidence Limits BIC}
+bic_fore$ul
+bic_fore$ll
+```
+
+```{r ASE BIC scores}
+
+ase_bic_univariate = mean((ts_nly_open[251:262] - bic_fore$f)^2)
+ase_bic_univariate # [1] 0.3891917
+```
+
+```{r ASE AIC roll win}
+roll.win.rmse.wge(ts_nly_open, horizon = 12, d = 1 )
+
+# [1] "The Summary Statistics for the Rolling Window RMSE Are:"
+#    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.08954 0.27891 0.40805 0.45852 0.60149 1.49417 
+# [1] "The Rolling Window RMSE is:  0.459"
+```
+
+### b. VAR with at least one explanatory variable
+```{r}
+
+# Create a data frame with all four predictors (Open, Close, High, Low columns)
+tnlyx <- data.frame(Open = ts(df.adj$Open), Close = ts(df.adj$Close), High = ts(df.adj$High), Low = ts(df.adj$Low), frequency = 1)
+
+# Remove rows with NA values from the entire data frame
+df_clean <- tnlyx[complete.cases(tnlyx), ]
+
+# Apply VARSelect to select the optimal lag order
+var_order <- VARselect(df_clean, lag.max = 10, type = "both")
+
+# Get the optimal lag order selected by AIC, HQIC, and SC
+optimal_lag <- var_order$selection
+
+optimal_lag
+
+```
+
+```{r Lagged VAR}
+# Create a data frame with all four variables (Open, Close, High, Low columns)
+data <- data.frame(Open = df.adj$Open, Close = df.adj$Close, High = df.adj$High, Low = df.adj$Low)
+
+# Set the lag order you want to use
+lag_order <- 1
+
+# Lag the other three variables (Close, High, Low) in the data frame
+lagged_data <- data %>% mutate_at(vars(-Open), lag, n = lag_order)
+
+# Remove rows with NA values from the lagged_data
+lagged_data <- na.omit(lagged_data)
+
+# Fit the VAR model using the lagged_data
+var_model <- VAR(lagged_data, p = lag_order, type = "both")
+
+
+var_model
+summary(var_model)
+```
+## Observations 
+
+Estimated coefficients for equation Open:
+
+* Open.l1: Coefficient for the lagged 'Open' variable (Open[t-1]).
+* Close.l1: Coefficient for the lagged 'Close' variable (Close[t-1]).
+* High.l1: Coefficient for the lagged 'High' variable (High[t-1]).
+* Low.l1: Coefficient for the lagged 'Low' variable (Low[t-1]).
+* const: Coefficient for the constant term (intercept).
+* trend: Coefficient for the trend term.
+
+** A one-unit increase in the lagged 'Open' variable (Open[t-1]) leads to a 0.9267 increase in the current 'Open' variable (Open[t]).
+
+** A one-unit increase in the lagged 'Close' variable (Close[t-1]) leads to a -0.0725 decrease in the current 'Open' variable (Open[t]).
+
+**A one-unit increase in the lagged 'High' variable (High[t-1]) leads to a 0.0519 increase in the current 'Open' variable (Open[t]).
+
+**A one-unit increase in the lagged 'Low' variable (Low[t-1]) leads to a 0.0563 increase in the current 'Open' variable (Open[t]).
+
+The constant term (intercept) and trend do not have lagged values as they are constant across time.
+
+The equation's multiple R-squared and adjusted R-squared are 0.9195 and 0.9179, respectively, indicating a good fit.
+
+The F-statistic and its p-value suggest that the overall equation is significant.
+
+```{r VAR predict}
+# Fit the VAR model using the lagged_data
+
+VAR_SM2 = VAR(lagged_data,lag.max = 5, type = "both")
+
+pred.short = predict(VAR_SM2,n.ahead = 12)
+pred.short$fcst$Open[,1]
+
+plot(data$Open, type = "l")
+lines(seq(251,262,1),pred.short$fcst$Open[,1],col = "red")
+```
+
+```{r ASE Var short horizon}
+var_ase_short_horizon = mean((data$Open[251:262] - pred.short$fcst$Open[,1])^2)
+
+var_ase_short_horizon
+```
+```{r VAR predict}
+# Fit the VAR model using the lagged_data
+
+VAR_SM2 = VAR(lagged_data,lag.max = 15, type = "both")
+
+pred.long = predict(VAR_SM2,n.ahead = 20)
+pred.long$fcst$Open[,1]
+
+plot(data$Open, type = "l")
+lines(seq(243,262,1),pred.long$fcst$Open[,1],col = "red")
+```
+
+```{r ASE Var short horizon}
+var_ase_long_horizon = mean((data$Open[243:262] - pred.long$fcst$Open[,1])^2)
+
+var_ase_long_horizon 
+```
+ 
+ 
+###	c.  Neural Network (mlp) - short horizon 
+
+```{r}
+#MLP
+
+NLYsmall = df.adj[1:250,]
+NLYsmallDF = data.frame(Close = ts(NLYsmall$Close), High = ts(NLYsmall$High), Low = ts(NLYsmall$Low))
+
+#Using forecast Open
+fit.mlp.Close = mlp(ts(NLYsmallDF$Close),reps = 50, comb = "mean")
+fit.mlp.High = mlp(ts(NLYsmallDF$High),reps = 50, comb = "mean")
+fit.mlp.Low = mlp(ts(NLYsmallDF$Low),reps = 50, comb = "mean")
+
+#Forecast the explainble features
+fore.mlp.Close = forecast(fit.mlp.Close, h = 12)
+fore.mlp.High = forecast(fit.mlp.High, h = 12)
+fore.mlp.Low = forecast(fit.mlp.Low, h = 12)
+
+
+plot(fore.mlp.Open) # plot the forecasts
+
+NLYsmallDF_fore = data.frame(Close = ts(fore.mlp.Close$mean), High = ts(fore.mlp.High$mean), Low = ts(fore.mlp.Low$mean))
+NLYsmallDF_fore
+
+fit.mlp = mlp(ts(NLYsmall$Open),reps = 50,comb = "mean",hd.auto.type = "cv",xreg = NLYsmallDF) #sensitive to initial values, first 50 iterations
+
+fit.mlp
+plot(fit.mlp)
+
+
+
+NLYDF = data.frame(Close = ts(c(NLYsmallDF$Close,NLYsmallDF_fore$Close)), High = ts(c(NLYsmallDF$High, NLYsmallDF_fore$High)),Low = ts(c(NLYsmallDF$Low, NLYsmallDF_fore$Low)))
+
+
+fore.mlp.short = forecast(fit.mlp, h = 12, xreg = NLYDF)
+plot(fore.mlp.short)
+
+plot(df.adj$Open, type = "l")
+lines(seq(251,262,1),fore.mlp.short$mean,col = "blue")
+```
+
+```{r ASE MLP Short Horizon}
+MLP_SH_ASE = mean((df.adj$Open[251:262] - fore.mlp.short$mean)^2)
+print(paste("ASE Score:", MLP_SH_ASE))
+```
+###	c.  Neural Network (mlp) - Long horizon 
+
+```{r}
+#MLP
+
+NLYLong = df.adj[1:243,]
+NLYLongDF = data.frame(Close = ts(NLYLong$Close), High = ts(NLYLong$High), Low = ts(NLYLong$Low))
+
+#Using forecast Open
+fit.mlp.Close = mlp(ts(NLYLongDF$Close), hd.auto.type = "cv",reps = 50, comb = "mean")
+fit.mlp.High = mlp(ts(NLYLongDF$High), hd.auto.type = "cv",reps = 50, comb = "mean")
+fit.mlp.Low = mlp(ts(NLYLongDF$Low), hd.auto.type = "cv",reps = 50, comb = "mean")
+
+#Forecast the explainble features
+fore.mlp.Close = forecast(fit.mlp.Close, h = 20)
+fore.mlp.High = forecast(fit.mlp.High, h = 20)
+fore.mlp.Low = forecast(fit.mlp.Low, h = 20)
+
+
+plot(fore.mlp.Open) # plot the forecasts
+
+NLYLongDF_fore = data.frame(Close = ts(fore.mlp.Close$mean), High = ts(fore.mlp.High$mean), Low = ts(fore.mlp.Low$mean))
+
+NLYLongDF_fore
+
+fit.mlp = mlp(ts(NLYLong$Open),reps = 50,comb = "mean",hd.auto.type = "cv",xreg = NLYLongDF) #sensitive to initial values, first 50 iterations
+
+fit.mlp
+plot(fit.mlp)
+
+
+
+NLYDF.Long = data.frame(Close = ts(c(NLYLongDF$Close,NLYLongDF_fore$Close)), High = ts(c(NLYLongDF$High, NLYLongDF_fore$High)),Low = ts(c(NLYLongDF$Low, NLYLongDF_fore$Low)))
+
+
+fore.mlp.long = forecast(fit.mlp, h = 20, xreg = NLYDF.Long)
+plot(fore.mlp.long)
+
+plot(df.adj$Open, type = "l")
+lines(seq(243,262,1),fore.mlp.long$mean,col = "blue")
+```
+
+```{r ASE MLP Long Horizon}
+MLP_LH_ASE = mean((df.adj$Open[243:262] - fore.mlp.long$mean)^2)
+print(paste("ASE Score:", MLP_LH_ASE))
+```
+
+
+
+###	d. Ensemble model using at least two of the above.  (this model does not have to “beat” your other models.
+
+```{r ensemable forecasts}
+
+sh_ensemble = (fore.mlp.short$mean + pred.short$fcst$Open[,1])/2
+
+plot(df.adj$Open, type = "l")
+lines(seq(251,262,1),sh_ensemble,col = "green")
+
+
+lh_ensemble = (fore.mlp.long$mean + pred.long$fcst$Open[,1])/2
+
+plot(df.adj$Open, type = "l")
+lines(seq(243,262,1),lh_ensemble,col = "green")
+```
+
+```{r ensemble ASE scores}
+
+ensemble_SH_ASE = mean((ts_nly_open[251:262] - sh_ensemble)^2)
+ensemble_SH_ASE
+
+ensemble_LH_ASE = mean((ts_nly_open[243:262] - lh_ensemble)^2)
+ensemble_LH_ASE
+
+```
+The ensemble does perform better than the Univariate and the MLP models by themselves. It may be worth noting to perform an ensemble model on an ongoing basis.  
+
+
+
+
+### 5. Pick a short and long term forecast horizon based on your “problem” from part 3 and compare all models with the ASE and the rolling window ASE for both the short and long term forecasts … this does not mean you have to choose the model with the lowest ASE. 
+
+
+```{r compare ASEs}
+
+### Univariate ASEs ###
+
+aic_uni = ase_aic_univariate # 0.3818423
+bic_uni = ase_bic_univariate # [1] 0.3891917
+roll_win_ase = 0.459
+
+# roll.win.rmse.wge(ts_nly_open, horizon = 12, d = 1 )
+
+# [1] "The Summary Statistics for the Rolling Window RMSE Are:"
+#    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.08954 0.27891 0.40805 0.45852 0.60149 1.49417 
+# [1] "The Rolling Window RMSE is:  0.459"
+
+
+### Multivariate Long Short Horizon ###
+var_lh = var_ase_long_horizon
+var_sh = var_ase_short_horizon
+
+mlp_lh = MLP_LH_ASE
+mlp_sh = MLP_SH_ASE
+
+comb_sh = ensemble_SH_ASE 
+comb_lh = ensemble_LH_ASE
+  
+# Create a data frame to store the model names and their ASE scores
+model_ase_df <- data.frame(Model = 
+                             c("AIC Univariate Model", "BIC Univariate Model", "Rolling Window RMSE Model", "VAR Short Horizon", "MLP Short Horizon", "Ensemble Model Short Horizon","VAR Long Horizon", "MLP Long Horizon", "Ensemble Model Long Horizon"),
+                           ASE = c(aic_uni, bic_uni, roll_win_ase, var_sh, mlp_sh, comb_sh, var_lh, mlp_lh, comb_lh))
+
+
+# Round the ASE scores to 4 decimal places
+model_ase_df$ASE <- round(model_ase_df$ASE, 4)
+
+
+#Add a new Column "Rank" to the DF which contains there rank order
+model_ase_df$Rank <- rank(model_ase_df$ASE)
+model_ase_df <- model_ase_df [order(model_ase_df$Rank), ]
+
+# Display the data frame in an output box
+print(model_ase_df)  
+  
+  
 ```
 
 
 
 
+### 6. Provide the forecasts and prediction limits for both the short and long term forecasts. 
+```{r Forecasts from all models forecasted}
+# Fit the univariate forecasts AIC & BIC
+aic_fore = fore.arima.wge(ts_nly_open, phi = aic_est$phi, theta = aic_est$theta, d=1,n.ahead = 12, lastn = T, limits = T)
+
+# BIC Model FOrecast
+bic_fore = fore.arima.wge(ts_nly_open, phi = bic_est$phi, theta = bic_est$theta, d=1, n.ahead = 12, lastn = T, limits = T)
+
+# Fit the VAR model using the lagged_data Short
+
+plot(data$Open, type = "l", main = "Forecast of VAR Model Long Horizon Market Open Price at lag 1")
+lines(seq(251,262,1),pred.short$fcst$Open[,1],col = "red")
+
+plot(data$Open, type = "l", main = "Forecast of VAR Model Long Horizon Market Open Price at lag 1")
+lines(seq(243,262,1),pred.long$fcst$Open[,1],col = "red")
+
+
+# Forecast the MLP model Short
+plot(df.adj$Open, type = "l", main = "Forecast of MLP Model Short Horizon Market Open Price at lag 1")
+lines(seq(251,262,1),fore.mlp.short$mean,col = "blue")
+
+plot(df.adj$Open, type = "l", main = "Forecast of MLP Model Long Horizon Market Open Price at lag 1")
+lines(seq(243,262,1),fore.mlp.long$mean,col = "blue")
+
+
+
+# Forecast the Ensemble Models
+plot(df.adj$Open, type = "l", main = "Forecast of Ensemble Short Horizon Model for Market Open Price at lag 1")
+lines(seq(251,262,1),sh_ensemble,col = "green")
+
+
+plot(df.adj$Open, type = "l", main = "Forecast of Ensemble Long Horizon Model for Market Open Price at lag 1")
+lines(seq(243,262,1),lh_ensemble,col = "green")
+
+```
+
+### 7. Create a ppt and a 7-minute video (with Zoom or YouTube) describing your analysis (more info below).  
+
+See video
+
+### 8. Post that video to you-Tube and the (private) link (or the Zoom link) to the Google-Doc and submit your ppt and Rmd File (or Jupyter notebook) to 2DS.  Please leave the link on the Google Doc for a week so others can learn from your presentation.  Please check out at least 3 of your peer’s presentations and please watch your own presentation as well.   It is often very useful (although always a bit awkward for me at least ;) to watch yourself present!  (Note: if you use the Zoom link, make sure you make it public so that I and your peers don’t need a password.)
+
+See Video
 
 
 
@@ -121,3 +529,202 @@ aic5.wge(ts_realest)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### The BELOW WORKS DO NOT DELETE 
+
+```{r}
+#MLP
+
+NLYsmall = df.adj[1:250,]
+NLYsmallDF = data.frame(Close = ts(NLYsmall$Close))
+
+#Using forecast Open
+fit.mlp.Close = mlp(ts(NLYsmallDF$Close),reps = 50, comb = "mean")
+fore.mlp.Close = forecast(fit.mlp.Close, h = 12)
+
+plot(fore.mlp.Open) # plot the forecasts
+
+NLYsmallDF_fore = data.frame(Close = ts(fore.mlp.Close$mean))
+NLYsmallDF_fore
+
+fit.mlp = mlp(ts(NLYsmall$Open),reps = 50,comb = "mean",xreg = NLYsmallDF) #sensitive to initial values, first 50 iterations
+fit.mlp
+plot(fit.mlp)
+
+
+
+NLYDF = data.frame(Close = ts(c(NLYsmallDF$Close,NLYsmallDF_fore$Close)))
+fore.mlp = forecast(fit.mlp, h = 12, xreg = NLYDF)
+plot(fore.mlp)
+
+plot(df.adj$Open, type = "l")
+lines(seq(251,262,1),fore.mlp$mean,col = "blue")
+
+ASE = mean((df.adj$Open[252:262] - fore.mlp$mean)^2)
+print(paste("ASE Score:", ASE))
+
+```
+
+### Extra code: testing
+
+```{r Neural Network NNET model}
+# Assuming your dataset is already loaded as 'df.adj'
+
+# Load required library (if not already loaded)
+# install.packages("forecast")
+library(forecast)
+
+# Calculate the index to split the data into training and testing sets
+n_train <- round(0.8 * nrow(df.adj))  # 80% of the data
+n_test <- nrow(df.adj) - n_train      # Remaining 20% of the data
+
+# Create a univariate time series object for the response variable 'Open'
+train_data_y <- ts(df.adj$Open[1:n_train])
+
+# Create a data frame with all four predictors (Open, Close, High, Low columns)
+tnlyx <- data.frame(Open = ts(df.adj$Open), Close = ts(df.adj$Close), High = ts(df.adj$High), Low = ts(df.adj$Low), frequency = 1)
+
+# Remove rows with NA values from the entire data frame
+df_clean <- tnlyx[complete.cases(tnlyx), ]
+
+# Split the cleaned data into response and predictors
+train_data_y <- df.adj$Open[1:n_train]
+train_data_xreg <- df_clean[1:n_train, -1]
+
+# Check if there are any NA values in train_data_y or train_data_xreg
+anyNA_train_y <- anyNA(train_data_y)
+anyNA_train_xreg <- anyNA(train_data_xreg)
+
+# Print the results to diagnose the issue
+cat("Any NA in train_data_y:", anyNA_train_y, "\n")
+cat("Any NA in train_data_xreg:", anyNA_train_xreg, "\n")
+
+```
+```{r}
+# Assuming your dataset is already loaded as 'df.adj'
+
+# Load required library (if not already loaded)
+# install.packages("forecast")
+library(forecast)
+
+# Calculate the index to split the data into training and testing sets
+n_train <- round(0.8 * nrow(df.adj))  # 80% of the data
+n_test <- nrow(df.adj) - n_train      # Remaining 20% of the data
+
+# Create a univariate time series object for the response variable 'Open'
+train_data_y <- ts(df.adj$Open[1:n_train])
+
+# Create a data frame with all four predictors (Open, Close, High, Low columns)
+tnlyx <- data.frame(Open = ts(df.adj$Open), Close = ts(df.adj$Close), High = ts(df.adj$High), Low = ts(df.adj$Low), frequency = 7)
+
+# Remove rows with NA values from the entire data frame
+df_clean <- tnlyx[complete.cases(tnlyx), ]
+
+# Split the cleaned data into response and predictors
+train_data_y <- ts(df.adj$Open[1:n_train])
+train_data_xreg <- df_clean[1:n_train, -1]
+
+# Set seed for reproducibility (optional)
+set.seed(2)
+
+# Print dimensions and class types to check data integrity
+cat("train_data_y dimensions:", dim(train_data_y), "\n")
+cat("train_data_xreg dimensions:", dim(train_data_xreg), "\n")
+cat("Class of train_data_y:", class(train_data_y), "\n")
+cat("Class of train_data_xreg:", class(train_data_xreg), "\n")
+
+# Convert train_data_y to a time series object
+train_data_y <- ts(train_data_y)
+
+# Convert train_data_xreg to a matrix
+train_data_xreg <- as.matrix(train_data_xreg)
+
+# Fit the MLP model on the training data with all three features (Open, High, Low)
+fit3 <- mlp(train_data_y, xreg = train_data_xreg)
+
+
+```
+
+```{r}
+# Print the number of non-NA values in train_data_y and train_data_xreg
+cat("Non-NA values in train_data_y:", sum(!is.na(train_data_y)), "\n")
+cat("Non-NA values in train_data_xreg:", sum(!is.na(train_data_xreg)), "\n")
+
+# Print the train_data_y time series
+print(train_data_y)
+
+```
+
+
+```{r}
+library(nnet)
+library(neuralnet)
+```
+
+
+```{r}
+set.seed(2)
+
+# Fit the MLP model on the training data with all three features (Open, High, Low)
+fit3 <- nnet(train_data_y, train_data_xreg, size = 10, maxit = 1000)
+```
+
+```{r}
+# Predict on the training data
+train_pred <- predict(fit3, train_data_xreg)
+
+# Predict on the testing data (for forecasting)
+test_pred <- predict(fit3, tnlyx[(n_train + 1):nrow(df.adj), -1])
+
+```
+
+```{r}
+# Combine the original data with the predicted values for the testing period
+forecast_values <- c(train_pred, test_pred)
+
+# Create a forecast time index for plotting
+forecast_time_index <- seq(1, nrow(df.adj))
+
+# Plot the original data and the forecasted values
+plot(forecast_time_index, df.adj$Open, type = "l", xlab = "Time", ylab = "Open Price", main = "Time Series Forecasting", ylim = c(0,13))
+
+# Add the forecasted values to the plot
+lines(forecast_time_index[(n_train + 1):nrow(df.adj)], forecast_values[(n_train + 1):nrow(df.adj)], col = "blue")
+
+# Add legend
+legend("topleft", legend = c("Original Data", "Forecast"), col = c("black", "blue"), lty = c(1, 1))
+
+# Calculate the Average Squared Error (ASE) score for the testing period
+ase_score <- mean((forecast_values[(n_train + 1):nrow(df.adj)] - df.adj$Open[(n_train + 1):nrow(df.adj)])^2)
+
+# Print the ASE score
+cat("ASE Score:", ase_score, "\n")
+
+
+```
+```{r}
+forecast_values[(n_train + 1):nrow(df.adj)]
+
+### printing things out, look at forecast, $ scale, components
+### lag - 1 for other variables 
+```
