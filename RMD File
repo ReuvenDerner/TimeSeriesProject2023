@@ -158,36 +158,67 @@ bic_est = est.arma.wge(diff_ts, p = 0, q = 0)
 ```{r forecast ARMA models}
 
 # AIC Model Forecast
-aic_fore = fore.arima.wge(ts_nly_open, phi = aic_est$phi, theta = aic_est$theta, d=1,n.ahead = 12, lastn = T, limits = T)
+aic_fore.short = fore.arima.wge(ts_nly_open, phi = aic_est$phi, theta = aic_est$theta, d=1,n.ahead = 12, lastn = T, limits = T)
 
 # BIC Model FOrecast
-bic_fore = fore.arima.wge(ts_nly_open, phi = bic_est$phi, theta = bic_est$theta, d=1, n.ahead = 12, lastn = T, limits = T)
+bic_fore.short = fore.arima.wge(ts_nly_open, phi = bic_est$phi, theta = bic_est$theta, d=1, n.ahead = 12, lastn = T, limits = T)
 
 # Both are more or less the same model given the ARMA component cancel each other out 
+
+
+# AIC Model Forecast
+aic_fore.long = fore.arima.wge(ts_nly_open, phi = aic_est$phi, theta = aic_est$theta, d=1,n.ahead = 20, lastn = T, limits = T)
+
+# BIC Model FOrecast
+bic_fore.long = fore.arima.wge(ts_nly_open, phi = bic_est$phi, theta = bic_est$theta, d=1, n.ahead = 20, lastn = T, limits = T)
 
 ```
 Both the long and short term horizon models appear to be hovering around the mean with significant upper and lower bounds to their forecasts predictions
 
 ```{r ASE Confience Limits}
-aic_fore$ul
-aic_fore$ll
+min_aic_short = min(aic_fore.short$ll)
+max_aic_long = max(aic_fore.short$ul)
+aic_cl_range = c(min_aic_short, max_aic_long) 
+print(aic_cl_range)
+
+
+min_aic_short = min(aic_fore.long$ll)
+max_aic_long = max(aic_fore.long$ul)
+aic_cl_range = c(min_aic_short, max_aic_long) 
+print(aic_cl_range)
+
 ```
 
 ```{r ASE Score}
-ase_aic_univariate = mean((ts_nly_open[251:262] - aic_fore$f)^2)
+ase_aic_univariate.short = mean((ts_nly_open[251:262] - aic_fore.short$f)^2)
+ase_aic_univariate.long = mean((ts_nly_open[243:262] - aic_fore.long$f)^2)
 
-ase_aic_univariate # 0.3818423
+ase_aic_univariate.short # 0.3818423
+ase_aic_univariate.long # 0.1671257
 ```
 
 ```{r Confidence Limits BIC}
-bic_fore$ul
-bic_fore$ll
+min_bic_short = min(bic_fore.short$ll)
+max_bic_long = max(bic_fore.short$ul)
+bic_cl_range = c(min_bic_short, max_bic_long) 
+print(bic_cl_range)
+
+
+min_bic_short = min(bic_fore.long$ll)
+max_bic_long = max(bic_fore.long$ul)
+bic_cl_range = c(min_bic_short, max_bic_long) 
+print(bic_cl_range)
+
 ```
 
 ```{r ASE BIC scores}
 
-ase_bic_univariate = mean((ts_nly_open[251:262] - bic_fore$f)^2)
-ase_bic_univariate # [1] 0.3891917
+ase_bic_univariate.short = mean((ts_nly_open[251:262] - bic_fore.short$f)^2)
+ase_bic_univariate.long = mean((ts_nly_open[243:262] - bic_fore.long$f)^2)
+
+ase_bic_univariate.short # [1] 0.3891917
+ase_bic_univariate.long # [1] 0.16209
+
 ```
 
 ```{r ASE AIC roll win}
@@ -198,6 +229,26 @@ roll.win.rmse.wge(ts_nly_open, horizon = 12, d = 1 )
 # 0.08954 0.27891 0.40805 0.45852 0.60149 1.49417 
 # [1] "The Rolling Window RMSE is:  0.459"
 ```
+
+```{r ASE AIC roll win long}
+
+roll.win.rmse.wge(ts_nly_open, horizon = 20, d = 1 )
+
+# [1] "The Summary Statistics for the Rolling Window RMSE Are:"
+#    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  0.1128  0.3796  0.5312  0.5879  0.7586  1.6339 
+# [1] "The Rolling Window RMSE is:  0.588"
+
+
+
+```
+
+
+
+
+
+
+
 
 ### b. VAR with at least one explanatory variable
 ```{r}
@@ -238,6 +289,32 @@ var_model <- VAR(lagged_data, p = lag_order, type = "both")
 var_model
 summary(var_model)
 ```
+
+```{r VAR Confidence Int}
+
+#xtract the estimated coefficients from the var_model list
+coefficients <- coef(var_model)[['Open']]  # Replace 'Open' with the desired variable
+
+# Extract the estimated coefficients and convert to numeric format
+coefficients <- as.numeric(coefficients)
+
+# Extract the standard errors of the coefficients
+standard_errors <- sqrt(diag(vcov(var_model)))
+
+# Calculate the confidence intervals (95% by default)
+lower_ci <- coefficients - 1.96 * standard_errors
+upper_ci <- coefficients + 1.96 * standard_errors
+
+# Create a data frame to store the results
+confidence_intervals <- data.frame(
+  Coefficients = coefficients,
+  Lower_CI = lower_ci,
+  Upper_CI = upper_ci
+)
+
+print(confidence_intervals)
+```
+
 ## Observations 
 
 Estimated coefficients for equation Open:
@@ -280,6 +357,8 @@ var_ase_short_horizon = mean((data$Open[251:262] - pred.short$fcst$Open[,1])^2)
 
 var_ase_short_horizon
 ```
+
+
 ```{r VAR predict}
 # Fit the VAR model using the lagged_data
 
@@ -344,6 +423,7 @@ lines(seq(251,262,1),fore.mlp.short$mean,col = "blue")
 MLP_SH_ASE = mean((df.adj$Open[251:262] - fore.mlp.short$mean)^2)
 print(paste("ASE Score:", MLP_SH_ASE))
 ```
+
 ###	c.  Neural Network (mlp) - Long horizon 
 
 ```{r}
@@ -430,9 +510,14 @@ The ensemble does perform better than the Univariate and the MLP models by thems
 
 ### Univariate ASEs ###
 
-aic_uni = ase_aic_univariate # 0.3818423
-bic_uni = ase_bic_univariate # [1] 0.3891917
-roll_win_ase = 0.459
+aic_uni_sh = ase_aic_univariate.short # 0.3818423
+aic_uni_lh = ase_aic_univariate.long # 
+
+bic_uni_sh = ase_bic_univariate.short # [1] 0.3891917
+bic_uni_lh = ase_bic_univariate.long # 
+
+roll_win_ase_short = 0.459
+roll_win_ase_long = 0.588
 
 # roll.win.rmse.wge(ts_nly_open, horizon = 12, d = 1 )
 
@@ -454,8 +539,8 @@ comb_lh = ensemble_LH_ASE
   
 # Create a data frame to store the model names and their ASE scores
 model_ase_df <- data.frame(Model = 
-                             c("AIC Univariate Model", "BIC Univariate Model", "Rolling Window RMSE Model", "VAR Short Horizon", "MLP Short Horizon", "Ensemble Model Short Horizon","VAR Long Horizon", "MLP Long Horizon", "Ensemble Model Long Horizon"),
-                           ASE = c(aic_uni, bic_uni, roll_win_ase, var_sh, mlp_sh, comb_sh, var_lh, mlp_lh, comb_lh))
+                             c("AIC Univariate Short Model", "AIC Univariate Long Model", "BIC Univariate Short Model", "BIC Univariate Long Model", "Rolling Window RMSE Short Model", "Rolling Window RMSE Long Model", "VAR Short Horizon", "MLP Short Horizon", "Ensemble Model Short Horizon","VAR Long Horizon", "MLP Long Horizon", "Ensemble Model Long Horizon"),
+                           ASE = c(aic_uni_sh, aic_uni_lh, bic_uni_sh, bic_uni_lh, roll_win_ase_short, roll_win_ase_long, var_sh, mlp_sh, comb_sh, var_lh, mlp_lh, comb_lh))
 
 
 # Round the ASE scores to 4 decimal places
@@ -478,14 +563,24 @@ print(model_ase_df)
 ### 6. Provide the forecasts and prediction limits for both the short and long term forecasts. 
 ```{r Forecasts from all models forecasted}
 # Fit the univariate forecasts AIC & BIC
-aic_fore = fore.arima.wge(ts_nly_open, phi = aic_est$phi, theta = aic_est$theta, d=1,n.ahead = 12, lastn = T, limits = T)
+# AIC Model Forecast
+aic_fore.short = fore.arima.wge(ts_nly_open, phi = aic_est$phi, theta = aic_est$theta, d=1,n.ahead = 12, lastn = T, limits = T)
 
 # BIC Model FOrecast
-bic_fore = fore.arima.wge(ts_nly_open, phi = bic_est$phi, theta = bic_est$theta, d=1, n.ahead = 12, lastn = T, limits = T)
+bic_fore.short = fore.arima.wge(ts_nly_open, phi = bic_est$phi, theta = bic_est$theta, d=1, n.ahead = 12, lastn = T, limits = T)
+
+# Both are more or less the same model given the ARMA component cancel each other out 
+
+
+# AIC Model Forecast
+aic_fore.long = fore.arima.wge(ts_nly_open, phi = aic_est$phi, theta = aic_est$theta, d=1,n.ahead = 20, lastn = T, limits = T)
+
+# BIC Model FOrecast
+bic_fore.long = fore.arima.wge(ts_nly_open, phi = bic_est$phi, theta = bic_est$theta, d=1, n.ahead = 20, lastn = T, limits = T)
 
 # Fit the VAR model using the lagged_data Short
 
-plot(data$Open, type = "l", main = "Forecast of VAR Model Long Horizon Market Open Price at lag 1")
+plot(data$Open, type = "l", main = "Forecast of VAR Model Short Horizon Market Open Price at lag 1")
 lines(seq(251,262,1),pred.short$fcst$Open[,1],col = "red")
 
 plot(data$Open, type = "l", main = "Forecast of VAR Model Long Horizon Market Open Price at lag 1")
